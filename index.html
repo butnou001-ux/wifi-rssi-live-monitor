@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Wi-Fi RSSI Live Monitor &amp; Heatmap</title>
+<style>
+  :root {
+    --bg: #0b1120;
+    --card: #111827;
+    --card-2: #0f172a;
+    --border: #1f2937;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --cyan: #38bdf8;
+    --amber: #f59e0b;
+    --emerald: #10b981;
+    --rose: #f43f5e;
+    --indigo: #818cf8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1440px; margin: 0 auto; padding: 16px 20px 32px; }
+
+  /* Header */
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 14px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: linear-gradient(135deg, #0284c7, #38bdf8);
+    display: grid; place-items: center; font-weight: 800; color: #0b1120; font-size: 18px;
+  }
+  h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+  .subtitle { font-size: 12px; color: var(--muted); }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
+    border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+    border: 1px solid var(--border); background: var(--card);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .badge.live { border-color: rgba(16,185,129,.45); color: #34d399; background: rgba(16,185,129,.1); }
+  .badge.live .dot { background: var(--emerald); box-shadow: 0 0 8px var(--emerald); }
+  .badge.offline { border-color: rgba(244,63,94,.45); color: #fda4af; background: rgba(244,63,94,.1); }
+  .badge.offline .dot { background: var(--rose); }
+  .badge.csv { border-color: rgba(56,189,248,.45); color: var(--cyan); background: rgba(56,189,248,.1); }
+  .badge.csv .dot { background: var(--cyan); }
+
+  button, .file-btn {
+    background: var(--card); color: var(--text); border: 1px solid var(--border);
+    padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 6px;
+  }
+  button:hover, .file-btn:hover { border-color: #334155; background: #1e293b; }
+  button.primary { background: #0284c7; border-color: #0ea5e9; color: #fff; }
+  button.primary:hover { background: #0369a1; }
+  button.amber { border-color: rgba(245,158,11,.5); color: #fcd34d; }
+  button.danger { border-color: rgba(244,63,94,.4); color: #fda4af; }
+  input[type=file] { display: none; }
+
+  /* Offline Banner */
+  .banner {
+    display: none; background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.35);
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; font-size: 13px; color: #fde68a;
+  }
+  .banner.show { display: block; }
+  .banner code {
+    background: rgba(15,23,42,.8); padding: 2px 6px; border-radius: 5px;
+    color: #38bdf8; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  }
+
+  /* Connected Radio Strip */
+  .radio-strip {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+    gap: 8px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px; margin-bottom: 14px;
+  }
+  .radio-item .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .radio-item .val { font-size: 13px; font-weight: 700; color: var(--text); margin-top: 2px; word-break: break-all; }
+  .radio-item .val.accent { color: var(--cyan); }
+
+  /* KPI Grid */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+  @media (max-width: 960px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .kpis { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+  }
+  .kpi-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+  .kpi-val { font-size: 28px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .kpi-sub { font-size: 12px; color: var(--muted); margin-top: 4px; display: flex; justify-content: space-between; gap: 8px; }
+  .sig-bar { height: 6px; background: #1e293b; border-radius: 999px; overflow: hidden; margin-top: 8px; }
+  .sig-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--rose), var(--amber), var(--emerald)); transition: width .25s; }
+
+  .pill {
+    display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;
+  }
+  .pill.still { background: rgba(16,185,129,.15); color: #34d399; border: 1px solid rgba(16,185,129,.35); }
+  .pill.motion { background: rgba(244,63,94,.18); color: #fb7185; border: 1px solid rgba(244,63,94,.45); }
+  .pill.wait { background: rgba(148,163,184,.12); color: var(--muted); border: 1px solid var(--border); }
+
+  /* Charts */
+  .grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 14px; }
+  @media (max-width: 1024px) { .grid-2 { grid-template-columns: 1fr; } }
+  .panel-head {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 8px; margin-bottom: 10px;
+  }
+  .panel-title { font-size: 14px; font-weight: 700; }
+  .panel-legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 11px; color: var(--muted); }
+  .leg-item { display: inline-flex; align-items: center; gap: 5px; }
+  .swatch { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  .canvas-box { position: relative; width: 100%; height: 270px; }
+  .canvas-box.tall { height: 290px; }
+  canvas { width: 100%; height: 100%; display: block; border-radius: 8px; background: var(--card-2); }
+  .tooltip {
+    position: absolute; pointer-events: none; display: none;
+    background: rgba(15,23,42,.95); border: 1px solid #334155; border-radius: 8px;
+    padding: 7px 10px; font-size: 11px; color: var(--text); z-index: 10; white-space: nowrap;
+  }
+
+  /* Nearby Networks Table (NetSpot-style) */
+  .table-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .search-input {
+    background: var(--card-2); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 10px; border-radius: 8px; font-size: 12px; width: 200px;
+  }
+  .filter-btn.active { background: #0284c7; border-color: #0ea5e9; color: #fff; }
+  .table-wrap { overflow-x: auto; max-height: 360px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  thead th {
+    position: sticky; top: 0; background: #0f172a; color: var(--muted); text-align: left;
+    padding: 9px 10px; font-weight: 600; border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  tbody td { padding: 8px 10px; border-bottom: 1px solid rgba(31,41,55,.7); white-space: nowrap; }
+  tbody tr:hover { background: rgba(56,189,248,.06); }
+  tbody tr.connected-row { background: rgba(16,185,129,.09); }
+  .conn-tag {
+    font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+    background: rgba(16,185,129,.2); color: #34d399; margin-left: 6px;
+  }
+  .band-tag {
+    font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+    background: rgba(56,189,248,.15); color: var(--cyan);
+  }
+  .band-tag.b24 { background: rgba(245,158,11,.15); color: #fbbf24; }
+  .band-tag.b6 { background: rgba(129,140,248,.2); color: #a5b4fc; }
+
+  footer {
+    margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--muted); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="logo">RF</div>
+      <div>
+        <h1>Wi-Fi RSSI Live Monitor &amp; Heatmap</h1>
+        <div class="subtitle">Real-time hardware RSSI, channel width &amp; nearby AP inspector — zero simulated data</div>
+      </div>
+    </div>
+    <div class="controls">
+      <span id="statusBadge" class="badge offline"><span class="dot"></span><span id="statusText">CONNECTING...</span></span>
+      <button id="btnPause" class="primary">Pause</button>
+      <button id="btnBaseline" class="amber" title="Shortcut: B">Lock Baseline (B)</button>
+      <button id="btnClearBase" title="Shortcut: C">Clear Base (C)</button>
+      <button id="btnReset" class="danger">Reset</button>
+      <label class="file-btn" title="Import NetSpot or RSSI CSV">
+        Import CSV
+        <input id="csvInput" type="file" accept=".csv,text/csv" />
+      </label>
+      <button id="btnExport">Export CSV</button>
+    </div>
+  </header>
+
+  <div id="offlineBanner" class="banner">
+    <strong>Local Wi-Fi hardware backend not detected.</strong> Browsers cannot read raw Wi-Fi RSSI directly for security reasons.
+    To monitor your own computer's real Wi-Fi live, run <code>python server.py</code> in this project folder and open
+    <code>http://localhost:8000</code> — or click <strong>Import CSV</strong> above to inspect a NetSpot / RSSI CSV file.
+  </div>
+
+  <!-- Connected AP Hardware Info Strip (100% real from OS) -->
+  <div class="radio-strip">
+    <div class="radio-item"><div class="lbl">Connected SSID</div><div id="rSsid" class="val accent">—</div></div>
+    <div class="radio-item"><div class="lbl">BSSID (AP MAC)</div><div id="rBssid" class="val">—</div></div>
+    <div class="radio-item"><div class="lbl">Band</div><div id="rBand" class="val accent">—</div></div>
+    <div class="radio-item"><div class="lbl">Channel &amp; Freq</div><div id="rChan" class="val">—</div></div>
+    <div class="radio-item"><div class="lbl">Channel Width</div><div id="rWidth" class="val accent">—</div></div>
+    <div class="radio-item"><div class="lbl">Wi-Fi Mode</div><div id="rMode" class="val">—</div></div>
+    <div class="radio-item"><div class="lbl">Security</div><div id="rSec" class="val">—</div></div>
+    <div class="radio-item"><div class="lbl">Link Speed (Rx/Tx)</div><div id="rRate" class="val">—</div></div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="kpis">
+    <div class="card">
+      <div class="kpi-title">Live Hardware RSSI</div>
+      <div id="kRssi" class="kpi-val" style="color:var(--cyan)">— dBm</div>
+      <div class="sig-bar"><div id="kSigFill" class="sig-fill"></div></div>
+      <div class="kpi-sub">
+        <span id="kSigPct">Signal: —</span>
+        <span id="kMinMax">Min — / Avg — / Max —</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="kpi-title">Delta vs Locked Baseline</div>
+      <div id="kDelta" class="kpi-val">— dB</div>
+      <div class="kpi-sub">
+        <span id="kBaseVal">Baseline: Not locked</span>
+        <span>Press B to lock spot</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="kpi-title">Motion / Stability (10s &sigma;)</div>
+      <div id="kStd" class="kpi-val">— dB</div>
+      <div class="kpi-sub">
+        <span id="kMotionPill" class="pill wait">WAITING</span>
+        <span id="kRepRate">Repeat: —</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="kpi-title">Session &amp; Adapter</div>
+      <div id="kTime" class="kpi-val">00:00</div>
+      <div class="kpi-sub">
+        <span id="kSamples">0 samples</span>
+        <span id="kAdapter" style="overflow:hidden;text-overflow:ellipsis;max-width:170px;">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Waveform ("Heart-Rate") + Histogram -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="panel-head">
+        <div class="panel-title">Live RSSI Signal Trace (Heart-Rate Waveform)</div>
+        <div class="panel-legend">
+          <span class="leg-item"><span class="swatch" style="background:var(--cyan)"></span>Raw RSSI (dBm)</span>
+          <span class="leg-item"><span class="swatch" style="background:#ffffff"></span>5s Moving Avg</span>
+          <span class="leg-item"><span class="swatch" style="background:var(--amber)"></span>Locked Baseline</span>
+        </div>
+      </div>
+      <div class="canvas-box tall">
+        <canvas id="lineCanvas"></canvas>
+        <div id="lineTip" class="tooltip"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="panel-head">
+        <div class="panel-title">RSSI Level Distribution (1 dB Bins)</div>
+        <div class="panel-legend"><span id="histRange" class="leg-item">Integer hardware steps</span></div>
+      </div>
+      <div class="canvas-box tall">
+        <canvas id="histCanvas"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live RSSI Density Heatmap -->
+  <div class="card" style="margin-bottom:14px;">
+    <div class="panel-head">
+      <div class="panel-title">Live RSSI Density Heatmap (Time vs Signal Strength)</div>
+      <div class="panel-legend">
+        <span>5-second time bins &times; 1 dB rows &middot; Brighter = higher sample concentration</span>
+      </div>
+    </div>
+    <div class="canvas-box">
+      <canvas id="heatCanvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Nearby Networks Inspector Table (like NetSpot) -->
+  <div class="card">
+    <div class="panel-head">
+      <div class="panel-title">Networks Around You (<span id="netCount">0</span> detected)</div>
+      <div class="table-controls">
+        <input id="netSearch" class="search-input" type="text" placeholder="Filter SSID or BSSID..." />
+        <button class="filter-btn active" data-band="ALL">All</button>
+        <button class="filter-btn" data-band="5 GHz">5 GHz</button>
+        <button class="filter-btn" data-band="2.4 GHz">2.4 GHz</button>
+        <button class="filter-btn" data-band="6 GHz">6 GHz</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>SSID</th>
+            <th>BSSID</th>
+            <th>Band</th>
+            <th>Channel</th>
+            <th>Freq (MHz)</th>
+            <th>Width</th>
+            <th>Mode</th>
+            <th>Security</th>
+            <th>RSSI (dBm)</th>
+            <th>Signal</th>
+            <th>Min / Avg / Max</th>
+          </tr>
+        </thead>
+        <tbody id="netBody">
+          <tr><td colspan="11" style="color:var(--muted);text-align:center;padding:20px;">Waiting for real Wi-Fi scan from server.py...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    <div>Reads real hardware RSSI &amp; 802.11 Beacon Information Elements (HT/VHT/HE/EHT) directly from your OS — no simulated data.</div>
+    <div>Shortcuts: <strong>Space</strong> Pause/Resume &middot; <strong>B</strong> Lock Baseline &middot; <strong>C</strong> Clear Baseline</div>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const POLL_MS = 500; // 2 Hz
+  const MAX_POINTS = 600; // 5 minutes rolling window on chart (all kept for CSV export)
+
+  const state = {
+    mode: "LIVE", // LIVE | CSV
+    paused: false,
+    connectedBackend: false,
+    startTime: null,
+    baseline: null,
+    samples: [], // { tSec, ts, rssi, pct, ssid, bssid, band, channel, freq, width, mode }
+    latest: null,
+    netHistory: new Map(), // bssid -> { min, max, sum, count, last }
+    bandFilter: "ALL",
+    searchText: "",
+  };
+
+  const el = id => document.getElementById(id);
+
+  // Format helpers
+  const fmt = (v, suffix = "") => (v === null || v === undefined || v === "" ? "—" : `${v}${suffix}`);
+  const fmtTime = sec => {
+    const s = Math.max(0, Math.floor(sec));
+    return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  };
+
+  function setStatus(type, text) {
+    const b = el("statusBadge");
+    b.className = "badge " + type;
+    el("statusText").textContent = text;
+  }
+
+  function updateRadioStrip(d) {
+    if (!d) return;
+    el("rSsid").textContent = fmt(d.ssid);
+    el("rBssid").textContent = fmt(d.bssid);
+    el("rBand").textContent = fmt(d.band);
+    el("rChan").textContent = d.channel ? `Ch ${d.channel}` + (d.frequency_mhz ? ` (${d.frequency_mhz} MHz)` : "") : "—";
+    el("rWidth").textContent = d.width_mhz ? `${d.width_mhz} MHz` : "—";
+    el("rMode").textContent = fmt(d.mode);
+    el("rSec").textContent = fmt(d.security);
+    if (d.rx_mbps || d.tx_mbps) {
+      el("rRate").textContent = `${d.rx_mbps ?? "—"} / ${d.tx_mbps ?? "—"} Mbps`;
+    } else {
+      el("rRate").textContent = "—";
+    }
+    el("kAdapter").textContent = d.adapter || d.os || "—";
+  }
+
+  function updateKPIs() {
+    const arr = state.samples;
+    if (!arr.length) {
+      el("kRssi").textContent = "— dBm";
+      el("kSigFill").style.width = "0%";
+      el("kSigPct").textContent = "Signal: —";
+      el("kMinMax").textContent = "Min — / Avg — / Max —";
+      el("kDelta").textContent = "— dB";
+      el("kStd").textContent = "— dB";
+      el("kMotionPill").className = "pill wait";
+      el("kMotionPill").textContent = "WAITING";
+      el("kRepRate").textContent = "Repeat: —";
+      el("kTime").textContent = "00:00";
+      el("kSamples").textContent = "0 samples";
+      return;
+    }
+
+    const last = arr[arr.length - 1];
+    el("kRssi").textContent = `${last.rssi} dBm`;
+    const pct = last.pct !== null && last.pct !== undefined
+      ? last.pct
+      : Math.max(0, Math.min(100, Math.round(2 * (last.rssi + 100))));
+    el("kSigFill").style.width = `${pct}%`;
+    el("kSigPct").textContent = `Signal: ${pct}%`;
+
+    let min = Infinity, max = -Infinity, sum = 0;
+    for (const s of arr) {
+      if (s.rssi < min) min = s.rssi;
+      if (s.rssi > max) max = s.rssi;
+      sum += s.rssi;
+    }
+    const avg = sum / arr.length;
+    el("kMinMax").textContent = `Min ${min} / Avg ${avg.toFixed(1)} / Max ${max}`;
+
+    // Delta vs baseline
+    if (state.baseline !== null) {
+      const diff = last.rssi - state.baseline;
+      el("kDelta").textContent = `${diff >= 0 ? "+" : ""}${diff.toFixed(1)} dB`;
+      el("kDelta").style.color = diff <= -3 ? "var(--rose)" : diff >= 2 ? "var(--emerald)" : "var(--amber)";
+      el("kBaseVal").textContent = `Baseline: ${state.baseline.toFixed(1)} dBm`;
+    } else {
+      el("kDelta").textContent = "— dB";
+      el("kDelta").style.color = "var(--text)";
+      el("kBaseVal").textContent = "Baseline: Not locked";
+    }
+
+    // Rolling 10s standard deviation (last 20 samples at 2 Hz)
+    const win = arr.filter(s => last.tSec - s.tSec <= 10.0);
+    if (win.length >= 4) {
+      const wMean = win.reduce((a, b) => a + b.rssi, 0) / win.length;
+      const variance = win.reduce((a, b) => a + Math.pow(b.rssi - wMean, 2), 0) / win.length;
+      const std = Math.sqrt(variance);
+      el("kStd").textContent = `${std.toFixed(2)} dB`;
+      const pill = el("kMotionPill");
+      if (std >= 1.15) {
+        pill.className = "pill motion";
+        pill.textContent = "MOTION / VARIANCE";
+        el("kStd").style.color = "var(--rose)";
+      } else {
+        pill.className = "pill still";
+        pill.textContent = "STATIONARY";
+        el("kStd").style.color = "var(--emerald)";
+      }
+    } else {
+      el("kStd").textContent = "— dB";
+      el("kMotionPill").className = "pill wait";
+      el("kMotionPill").textContent = "COLLECTING";
+    }
+
+    // Repetition rate
+    if (arr.length > 1) {
+      let same = 0;
+      for (let i = 1; i < arr.length; i++) if (arr[i].rssi === arr[i - 1].rssi) same++;
+      el("kRepRate").textContent = `Repeat: ${((same / (arr.length - 1)) * 100).toFixed(0)}%`;
+    }
+
+    el("kTime").textContent = fmtTime(last.tSec);
+    el("kSamples").textContent = `${arr.length} samples`;
+  }
+
+  function updateNetworksTable(networks, connectedBssid) {
+    if (!Array.isArray(networks)) return;
+    for (const net of networks) {
+      if (!net.bssid) continue;
+      let rec = state.netHistory.get(net.bssid);
+      if (!rec) {
+        rec = { min: net.rssi_dbm, max: net.rssi_dbm, sum: net.rssi_dbm, count: 1, last: net };
+      } else {
+        if (net.rssi_dbm < rec.min) rec.min = net.rssi_dbm;
+        if (net.rssi_dbm > rec.max) rec.max = net.rssi_dbm;
+        rec.sum += net.rssi_dbm;
+        rec.count += 1;
+        rec.last = net;
+      }
+      state.netHistory.set(net.bssid, rec);
+    }
+    renderNetworksTable(connectedBssid);
+  }
+
+  function renderNetworksTable(connectedBssid) {
+    const tbody = el("netBody");
+    const q = state.searchText.toLowerCase();
+    const list = Array.from(state.netHistory.values())
+      .filter(r => {
+        const n = r.last;
+        if (state.bandFilter !== "ALL" && n.band !== state.bandFilter) return false;
+        if (q && !(n.ssid || "").toLowerCase().includes(q) && !(n.bssid || "").toLowerCase().includes(q)) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const aConn = connectedBssid && a.last.bssid === connectedBssid ? 1 : 0;
+        const bConn = connectedBssid && b.last.bssid === connectedBssid ? 1 : 0;
+        if (aConn !== bConn) return bConn - aConn;
+        return (b.last.rssi_dbm ?? -999) - (a.last.rssi_dbm ?? -999);
+      });
+
+    el("netCount").textContent = list.length;
+    if (!list.length) {
+      tbody.innerHTML = `<tr><td colspan="11" style="color:var(--muted);text-align:center;padding:18px;">No matching networks.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = list.map(r => {
+      const n = r.last;
+      const isConn = connectedBssid && n.bssid === connectedBssid;
+      const avg = (r.sum / r.count).toFixed(1);
+      const bClass = n.band === "2.4 GHz" ? "b24" : n.band === "6 GHz" ? "b6" : "";
+      return `<tr class="${isConn ? "connected-row" : ""}">
+        <td><strong>${escapeHtml(n.ssid || "<Hidden>")}</strong>${isConn ? '<span class="conn-tag">CONNECTED</span>' : ""}</td>
+        <td style="font-family:monospace;color:var(--muted)">${escapeHtml(n.bssid || "—")}</td>
+        <td>${n.band ? `<span class="band-tag ${bClass}">${n.band}</span>` : "—"}</td>
+        <td>${fmt(n.channel)}</td>
+        <td>${fmt(n.frequency_mhz)}</td>
+        <td><strong>${n.width_mhz ? n.width_mhz + " MHz" : "—"}</strong></td>
+        <td>${escapeHtml(n.mode || "—")}</td>
+        <td>${escapeHtml(n.security || "—")}</td>
+        <td style="color:var(--cyan);font-weight:700">${fmt(n.rssi_dbm, " dBm")}</td>
+        <td>${fmt(n.signal_pct, "%")}</td>
+        <td style="color:var(--muted)">${r.min} / ${avg} / ${r.max}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  }
+
+  // ---------------------------------------------------------------------------
+  // HiDPI Canvas Rendering: Line Chart, Density Heatmap, Histogram
+  // ---------------------------------------------------------------------------
+  function setupCanvas(canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(100, Math.floor(rect.width));
+    const h = Math.max(100, Math.floor(rect.height));
+    if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+    }
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w, h };
+  }
+
+  function getYBounds(points) {
+    if (!points.length) return { yMin: -80, yMax: -30 };
+    let mn = Infinity, mx = -Infinity;
+    for (const p of points) {
+      if (p.rssi < mn) mn = p.rssi;
+      if (p.rssi > mx) mx = p.rssi;
+    }
+    if (state.baseline !== null) {
+      mn = Math.min(mn, state.baseline);
+      mx = Math.max(mx, state.baseline);
+    }
+    const pad = Math.max(4, Math.ceil((mx - mn) * 0.25));
+    return { yMin: Math.floor(mn - pad), yMax: Math.ceil(mx + pad) };
+  }
+
+  let lastPlotMeta = null;
+
+  function drawLineChart() {
+    const canvas = el("lineCanvas");
+    const { ctx, w, h } = setupCanvas(canvas);
+    ctx.clearRect(0, 0, w, h);
+
+    const pad = { l: 50, r: 16, t: 16, b: 28 };
+    const pw = w - pad.l - pad.r;
+    const ph = h - pad.t - pad.b;
+
+    const pts = state.samples.slice(-MAX_POINTS);
+    const { yMin, yMax } = getYBounds(pts);
+    const ySpan = Math.max(1, yMax - yMin);
+
+    // Grid
+    ctx.strokeStyle = "#1e293b";
+    ctx.lineWidth = 1;
+    ctx.font = "11px ui-monospace, monospace";
+    ctx.fillStyle = "#64748b";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+
+    const ySteps = 5;
+    for (let i = 0; i <= ySteps; i++) {
+      const val = yMax - (ySpan * i) / ySteps;
+      const y = pad.t + (ph * i) / ySteps;
+      ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+      ctx.fillText(`${val.toFixed(0)}`, pad.l - 8, y);
+    }
+
+    if (!pts.length) {
+      ctx.fillStyle = "#64748b";
+      ctx.textAlign = "center";
+      ctx.font = "13px sans-serif";
+      ctx.fillText("Waiting for live RSSI samples...", pad.l + pw / 2, pad.t + ph / 2);
+      lastPlotMeta = null;
+      return;
+    }
+
+    const tMin = pts[0].tSec;
+    const tMax = Math.max(tMin + 10, pts[pts.length - 1].tSec);
+    const xOf = t => pad.l + ((t - tMin) / (tMax - tMin)) * pw;
+    const yOf = r => pad.t + ((yMax - r) / ySpan) * ph;
+
+    // X-axis ticks
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    for (let i = 0; i <= 5; i++) {
+      const t = tMin + ((tMax - tMin) * i) / 5;
+      const x = xOf(t);
+      ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, h - pad.b); ctx.stroke();
+      ctx.fillText(fmtTime(t), x, h - pad.b + 8);
+    }
+
+    // Locked baseline
+    if (state.baseline !== null) {
+      const by = yOf(state.baseline);
+      ctx.save();
+      ctx.strokeStyle = "#f59e0b";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.moveTo(pad.l, by); ctx.lineTo(w - pad.r, by); ctx.stroke();
+      ctx.restore();
+    }
+
+    // Raw RSSI line
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    pts.forEach((p, idx) => {
+      const x = xOf(p.tSec), y = yOf(p.rssi);
+      if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Area fill under trace
+    ctx.fillStyle = "rgba(56,189,248,0.08)";
+    ctx.lineTo(xOf(pts[pts.length - 1].tSec), h - pad.b);
+    ctx.lineTo(xOf(pts[0].tSec), h - pad.b);
+    ctx.closePath();
+    ctx.fill();
+
+    // 5-second moving average
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < pts.length; i++) {
+      let s = 0, c = 0;
+      for (let j = i; j >= 0 && pts[i].tSec - pts[j].tSec <= 5.0; j--) {
+        s += pts[j].rssi; c++;
+      }
+      const x = xOf(pts[i].tSec), y = yOf(s / c);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Live pulse dot at end
+    const lp = pts[pts.length - 1];
+    ctx.fillStyle = "#38bdf8";
+    ctx.beginPath(); ctx.arc(xOf(lp.tSec), yOf(lp.rssi), 4, 0, Math.PI * 2); ctx.fill();
+
+    lastPlotMeta = { pts, pad, pw, ph, tMin, tMax, xOf, yOf };
+  }
+
+  function heatColor(ratio) {
+    // Dark navy -> cyan -> amber -> rose
+    if (ratio <= 0) return "rgba(15,23,42,0)";
+    if (ratio < 0.35) {
+      const t = ratio / 0.35;
+      return `rgba(${Math.round(14 + 42*t)}, ${Math.round(116 + 73*t)}, ${Math.round(144 + 104*t)}, ${0.25 + 0.55*t})`;
+    }
+    if (ratio < 0.7) {
+      const t = (ratio - 0.35) / 0.35;
+      return `rgba(${Math.round(56 + 189*t)}, ${Math.round(189 - 31*t)}, ${Math.round(248 - 237*t)}, 0.88)`;
+    }
+    const t = (ratio - 0.7) / 0.3;
+    return `rgba(${Math.round(245 - 1*t)}, ${Math.round(158 - 95*t)}, ${Math.round(11 + 83*t)}, 0.96)`;
+  }
+
+  function drawHeatmap() {
+    const canvas = el("heatCanvas");
+    const { ctx, w, h } = setupCanvas(canvas);
+    ctx.clearRect(0, 0, w, h);
+
+    const pad = { l: 50, r: 16, t: 14, b: 28 };
+    const pw = w - pad.l - pad.r;
+    const ph = h - pad.t - pad.b;
+
+    const pts = state.samples.slice(-MAX_POINTS);
+    if (!pts.length) {
+      ctx.fillStyle = "#64748b";
+      ctx.textAlign = "center";
+      ctx.font = "13px sans-serif";
+      ctx.fillText("Heatmap populates automatically as live samples arrive...", pad.l + pw / 2, pad.t + ph / 2);
+      return;
+    }
+
+    const { yMin, yMax } = getYBounds(pts);
+    const rows = Math.max(6, yMax - yMin + 1);
+    const binSec = 5;
+    const tMin = Math.floor(pts[0].tSec / binSec) * binSec;
+    const tMax = Math.max(tMin + binSec * 6, Math.ceil((pts[pts.length - 1].tSec + 0.1) / binSec) * binSec);
+    const cols = Math.max(1, Math.round((tMax - tMin) / binSec));
+
+    const grid = Array.from({ length: cols }, () => new Map());
+    const colTotals = new Array(cols).fill(0);
+
+    for (const p of pts) {
+      const c = Math.min(cols - 1, Math.max(0, Math.floor((p.tSec - tMin) / binSec)));
+      const r = Math.round(p.rssi);
+      grid[c].set(r, (grid[c].get(r) || 0) + 1);
+      colTotals[c]++;
+    }
+
+    const cellW = pw / cols;
+    const cellH = ph / rows;
+
+    for (let c = 0; c < cols; c++) {
+      if (!colTotals[c]) continue;
+      for (const [rssiVal, cnt] of grid[c].entries()) {
+        if (rssiVal < yMin || rssiVal > yMax) continue;
+        const rIdx = yMax - rssiVal;
+        const ratio = cnt / colTotals[c];
+        ctx.fillStyle = heatColor(ratio);
+        ctx.fillRect(pad.l + c * cellW, pad.t + rIdx * cellH, Math.max(1.5, cellW - 0.5), Math.max(2, cellH - 0.5));
+      }
+    }
+
+    // Y labels
+    ctx.font = "11px ui-monospace, monospace";
+    ctx.fillStyle = "#64748b";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    const step = Math.max(1, Math.ceil(rows / 6));
+    for (let r = yMax; r >= yMin; r -= step) {
+      const y = pad.t + (yMax - r + 0.5) * cellH;
+      ctx.fillText(`${r}`, pad.l - 8, y);
+    }
+
+    // X labels
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    const xTicks = Math.min(6, cols);
+    for (let i = 0; i <= xTicks; i++) {
+      const t = tMin + ((tMax - tMin) * i) / xTicks;
+      const x = pad.l + (pw * i) / xTicks;
+      ctx.fillText(fmtTime(t), x, h - pad.b + 8);
+    }
+  }
+
+  function drawHistogram() {
+    const canvas = el("histCanvas");
+    const { ctx, w, h } = setupCanvas(canvas);
+    ctx.clearRect(0, 0, w, h);
+
+    const pad = { l: 42, r: 16, t: 16, b: 30 };
+    const pw = w - pad.l - pad.r;
+    const ph = h - pad.t - pad.b;
+
+    const pts = state.samples;
+    if (!pts.length) {
+      ctx.fillStyle = "#64748b";
+      ctx.textAlign = "center";
+      ctx.font = "13px sans-serif";
+      ctx.fillText("No samples yet", pad.l + pw / 2, pad.t + ph / 2);
+      return;
+    }
+
+    const counts = new Map();
+    let mn = Infinity, mx = -Infinity;
+    for (const p of pts) {
+      const k = Math.round(p.rssi);
+      counts.set(k, (counts.get(k) || 0) + 1);
+      if (k < mn) mn = k;
+      if (k > mx) mx = k;
+    }
+    const keys = [];
+    for (let k = mn; k <= mx; k++) keys.push(k);
+    const maxCnt = Math.max(1, ...counts.values());
+    const barW = pw / keys.length;
+
+    ctx.font = "10px ui-monospace, monospace";
+    keys.forEach((k, idx) => {
+      const c = counts.get(k) || 0;
+      const bh = (c / maxCnt) * ph;
+      const x = pad.l + idx * barW;
+      const y = h - pad.b - bh;
+      ctx.fillStyle = "#38bdf8";
+      ctx.fillRect(x + 2, y, Math.max(2, barW - 4), bh);
+
+      if (keys.length <= 16 || idx % Math.ceil(keys.length / 10) === 0) {
+        ctx.fillStyle = "#94a3b8";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.fillText(`${k}`, x + barW / 2, h - pad.b + 8);
+      }
+    });
+
+    ctx.fillStyle = "#64748b";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`${maxCnt}`, pad.l - 6, pad.t);
+    ctx.fillText("0", pad.l - 6, h - pad.b);
+  }
+
+  function renderAll() {
+    updateKPIs();
+    drawLineChart();
+    drawHeatmap();
+    drawHistogram();
+  }
+
+  // Hover tooltip on line chart
+  el("lineCanvas").addEventListener("mousemove", e => {
+    const tip = el("lineTip");
+    if (!lastPlotMeta || !lastPlotMeta.pts.length) { tip.style.display = "none"; return; }
+    const rect = e.target.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const { pts, xOf, yOf } = lastPlotMeta;
+    let best = pts[0], bestDist = Infinity;
+    for (const p of pts) {
+      const d = Math.abs(xOf(p.tSec) - mx);
+      if (d < bestDist) { bestDist = d; best = p; }
+    }
+    tip.style.display = "block";
+    tip.style.left = `${Math.min(rect.width - 155, Math.max(8, xOf(best.tSec) + 10))}px`;
+    tip.style.top = `${Math.max(8, yOf(best.rssi) - 36)}px`;
+    tip.innerHTML = `<strong>${best.rssi} dBm</strong> &middot; t=${fmtTime(best.tSec)}<br>${escapeHtml(best.ssid || "")} ${best.channel ? "Ch " + best.channel : ""}`;
+  });
+  el("lineCanvas").addEventListener("mouseleave", () => { el("lineTip").style.display = "none"; });
+
+  // ---------------------------------------------------------------------------
+  // Live Polling Loop (/api/live)
+  // ---------------------------------------------------------------------------
+  async function pollLive() {
+    if (state.mode !== "LIVE") return;
+    try {
+      const res = await fetch("/api/live", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const d = await res.json();
+      state.connectedBackend = true;
+      el("offlineBanner").classList.remove("show");
+      state.latest = d;
+      updateRadioStrip(d);
+      updateNetworksTable(d.networks, d.bssid);
+
+      if (d.connected && d.rssi_dbm !== null && d.rssi_dbm !== undefined) {
+        setStatus("live", state.paused ? "PAUSED (LIVE)" : `LIVE · ${d.band || "Wi-Fi"}`);
+        if (!state.paused) {
+          const now = performance.now();
+          if (state.startTime === null) state.startTime = now;
+          const tSec = (now - state.startTime) / 1000;
+          state.samples.push({
+            tSec,
+            ts: d.timestamp || new Date().toISOString(),
+            rssi: Number(d.rssi_dbm),
+            pct: d.signal_pct,
+            ssid: d.ssid,
+            bssid: d.bssid,
+            band: d.band,
+            channel: d.channel,
+            freq: d.frequency_mhz,
+            width: d.width_mhz,
+            mode: d.mode,
+          });
+          renderAll();
+        }
+      } else {
+        setStatus("offline", "NO WI-FI LINK");
+      }
+    } catch (err) {
+      state.connectedBackend = false;
+      setStatus("offline", "BACKEND OFFLINE");
+      el("offlineBanner").classList.add("show");
+    }
+  }
+
+  setInterval(pollLive, POLL_MS);
+  pollLive();
+
+  // ---------------------------------------------------------------------------
+  // Controls & CSV Import / Export
+  // ---------------------------------------------------------------------------
+  function lockBaseline() {
+    if (!state.samples.length) return;
+    const recent = state.samples.slice(-10);
+    state.baseline = recent.reduce((a, b) => a + b.rssi, 0) / recent.length;
+    renderAll();
+  }
+  function clearBaseline() {
+    state.baseline = null;
+    renderAll();
+  }
+  function togglePause() {
+    state.paused = !state.paused;
+    el("btnPause").textContent = state.paused ? "Resume" : "Pause";
+    if (state.connectedBackend) setStatus("live", state.paused ? "PAUSED (LIVE)" : `LIVE · ${state.latest?.band || "Wi-Fi"}`);
+  }
+  function resetSession() {
+    state.mode = "LIVE";
+    state.samples = [];
+    state.startTime = null;
+    state.baseline = null;
+    state.paused = false;
+    el("btnPause").textContent = "Pause";
+    renderAll();
+  }
+
+  el("btnPause").addEventListener("click", togglePause);
+  el("btnBaseline").addEventListener("click", lockBaseline);
+  el("btnClearBase").addEventListener("click", clearBaseline);
+  el("btnReset").addEventListener("click", resetSession);
+
+  window.addEventListener("keydown", e => {
+    if (document.activeElement && document.activeElement.tagName === "INPUT") return;
+    if (e.code === "Space") { e.preventDefault(); togglePause(); }
+    if (e.key.toLowerCase() === "b") lockBaseline();
+    if (e.key.toLowerCase() === "c") clearBaseline();
+  });
+
+  // Network table filters
+  el("netSearch").addEventListener("input", e => {
+    state.searchText = e.target.value;
+    renderNetworksTable(state.latest?.bssid);
+  });
+  document.querySelectorAll(".filter-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.bandFilter = btn.dataset.band;
+      renderNetworksTable(state.latest?.bssid);
+    });
+  });
+
+  // Export CSV
+  el("btnExport").addEventListener("click", () => {
+    if (!state.samples.length) return alert("No live samples recorded yet.");
+    const header = "timestamp,elapsed_s,ssid,bssid,band,channel,frequency_mhz,width_mhz,mode,rssi_dbm,signal_pct\n";
+    const rows = state.samples.map(s =>
+      [s.ts, s.tSec.toFixed(2), `"${(s.ssid||"").replace(/"/g,'""')}"`, s.bssid||"", s.band||"",
+       s.channel??"", s.freq??"", s.width??"", s.mode||"", s.rssi, s.pct??""].join(",")
+    ).join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `wifi_rssi_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // Import CSV (supports this tool's CSV, wifi_collect.py CSV, or NetSpot CSV)
+  el("csvInput").addEventListener("change", async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return alert("CSV file appears empty.");
+
+    const parseRow = line => {
+      const out = []; let cur = "", inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') inQ = !inQ;
+        else if (ch === "," && !inQ) { out.push(cur.trim()); cur = ""; }
+        else cur += ch;
+      }
+      out.push(cur.trim());
+      return out;
+    };
+
+    const hdr = parseRow(lines[0]).map(h => h.toLowerCase());
+    const idxRssi = hdr.findIndex(h => h.includes("rssi") || h === "level" || h === "signal (dbm)");
+    const idxElapsed = hdr.findIndex(h => h.includes("elapsed"));
+    const idxSsid = hdr.findIndex(h => h === "ssid");
+    const idxBssid = hdr.findIndex(h => h === "bssid");
+    const idxChan = hdr.findIndex(h => h === "channel");
+    const idxFreq = hdr.findIndex(h => h.includes("freq"));
+    const idxWidth = hdr.findIndex(h => h.includes("width"));
+    const idxBand = hdr.findIndex(h => h === "band");
+    const idxMode = hdr.findIndex(h => h === "mode");
+
+    if (idxRssi === -1) return alert("Could not find an RSSI column in this CSV.");
+
+    const loaded = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseRow(lines[i]);
+      const rssi = parseFloat(cols[idxRssi]);
+      if (isNaN(rssi)) continue;
+      let tSec = loaded.length * 0.5;
+      if (idxElapsed !== -1 && !isNaN(parseFloat(cols[idxElapsed]))) {
+        const v = parseFloat(cols[idxElapsed]);
+        tSec = hdr[idxElapsed].includes("min") ? v * 60 : v;
+      }
+      loaded.push({
+        tSec,
+        ts: cols[0] || "",
+        rssi,
+        pct: null,
+        ssid: idxSsid !== -1 ? cols[idxSsid] : file.name,
+        bssid: idxBssid !== -1 ? cols[idxBssid] : null,
+        band: idxBand !== -1 ? cols[idxBand] : null,
+        channel: idxChan !== -1 ? cols[idxChan] : null,
+        freq: idxFreq !== -1 ? cols[idxFreq] : null,
+        width: idxWidth !== -1 ? cols[idxWidth] : null,
+        mode: idxMode !== -1 ? cols[idxMode] : null,
+      });
+    }
+
+    if (!loaded.length) return alert("No valid numeric RSSI rows found.");
+    state.mode = "CSV";
+    state.samples = loaded;
+    state.baseline = null;
+    const last = loaded[loaded.length - 1];
+    updateRadioStrip({
+      ssid: last.ssid, bssid: last.bssid, band: last.band, channel: last.channel,
+      frequency_mhz: last.freq, width_mhz: last.width, mode: last.mode, adapter: `CSV: ${file.name}`
+    });
+    setStatus("csv", `CSV · ${file.name}`);
+    el("offlineBanner").classList.remove("show");
+    renderAll();
+    e.target.value = "";
+  });
+
+  window.addEventListener("resize", renderAll);
+})();
+</script>
+</body>
+</html>
