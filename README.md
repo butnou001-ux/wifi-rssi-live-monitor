@@ -20,7 +20,7 @@ No hardcoded router names. No simulated data. Zero external Python dependencies.
 Requires **Python 3.8+** (standard library only — no `pip install` needed).
 
 ```bash
-git clone https://github.com/<your-username>/wifi-rssi-live-monitor.git
+git clone https://github.com/butnou001-ux/wifi-rssi-live-monitor.git
 cd wifi-rssi-live-monitor
 python server.py
 ```
